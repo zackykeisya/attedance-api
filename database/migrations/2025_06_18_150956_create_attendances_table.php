@@ -9,8 +9,8 @@ class CreateAttendancesTable extends Migration {
         Schema::create('attendances', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->uuid('user_id');
-            $table->timestamp('clock_in')->nullable();
-            $table->timestamp('clock_out')->nullable();
+            $table->time('clock_in')->nullable();
+            $table->time('clock_out')->nullable();
             $table->date('date');
             $table->timestamps();
 

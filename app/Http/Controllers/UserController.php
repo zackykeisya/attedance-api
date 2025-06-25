@@ -6,34 +6,72 @@ use App\Http\Requests\UserRequest;
 use App\Services\UserService;
 use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use App\Models\User;
 
-class UserController extends Controller {
+class UserController extends Controller
+{
     protected $service;
 
-    public function __construct(UserService $service) {
+    public function __construct(UserService $service)
+    {
         $this->service = $service;
     }
 
-    public function index() {
-        return UserResource::collection($this->service->all());
+    // ✅ Ambil semua user dengan role "karyawan"
+    public function karyawan()
+    {
+        $karyawan = $this->service->getKaryawan();
+        return UserResource::collection($karyawan);
     }
 
-    public function store(Request $request) {
+    // ✅ Tambah user karyawan baru
+    public function createKaryawan(Request $request)
+    {
         $this->validate($request, UserRequest::rules($request));
-        return new UserResource($this->service->create($request->all()));
+        $data = $request->all();
+        $data['role'] = 'karyawan';
+        return new UserResource($this->service->create($data));
     }
 
-    public function show($id) {
-        return new UserResource($this->service->find($id));
+    // ✅ Ambil detail user karyawan berdasarkan ID
+    public function showKaryawan($id)
+    {
+        return new UserResource($this->service->findByRole($id, 'karyawan'));
     }
 
-    public function update(Request $request, $id) {
-        $this->validate($request, UserRequest::rules($request));
-        return new UserResource($this->service->update($id, $request->all()));
+    // ✅ Update user karyawan (biarkan password kosong jika tidak ingin diubah)
+    public function updateKaryawan(Request $request, $id)
+    {
+        $user = User::findOrFail($id);
+
+        // Validasi: perbolehkan email yang sama dengan email sekarang
+        $this->validate($request, [
+            'name' => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email,' . $id,
+            'password' => 'nullable|string|min:6',
+            'role' => 'required|in:admin,karyawan',
+        ]);
+
+        $user->name = $request->name;
+        $user->email = $request->email;
+        $user->role = $request->role;
+
+        if (!empty($request->password)) {
+            $user->password = Hash::make($request->password);
+        }
+
+        $user->save();
+
+        return response()->json(['message' => 'User berhasil diperbarui.']);
     }
 
-    public function destroy($id) {
-        $this->service->delete($id);
-        return response()->json(['message' => 'User deleted']);
+    // ✅ Hapus user karyawan
+    public function destroyKaryawan($id)
+    {
+        $user = User::findOrFail($id);
+        $user->delete();
+
+        return response()->json(['message' => 'User berhasil dihapus.']);
     }
 }

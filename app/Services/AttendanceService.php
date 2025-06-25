@@ -4,12 +4,18 @@ namespace App\Services;
 
 use App\Repositories\AttendanceRepository;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class AttendanceService {
     protected $repo;
 
     public function __construct(AttendanceRepository $repo) {
         $this->repo = $repo;
+    }
+
+    public function today($userId) {
+        $today = Carbon::now()->toDateString();
+        return $this->repo->todayRecord($userId, $today);
     }
 
     public function clockIn($userId) {
@@ -47,8 +53,50 @@ class AttendanceService {
     public function getUserHistory($userId, $from = null, $to = null) {
         return $this->repo->historyByUser($userId, $from, $to);
     }
+
     public function getAll($userId = null, $from = null, $to = null) {
-    return $this->repo->getAllHistory($userId, $from, $to);
+        return $this->repo->getAllHistory($userId, $from, $to);
+    }
+
+    public function getAllHistory() {
+        return $this->repo->getAll();
+    }
+
+    public function filterByUser($userId) {
+        return $this->repo->getAllHistory($userId);
+    }
+
+    public function filterByDate($date) {
+        return $this->repo->getByDate($date);
+    }
+
+    public function filterCombined($userId, $date) {
+        return $this->repo->getByUserAndDate($userId, $date);
+    }
+
+    public function getStatistik() {
+        return $this->repo->statistikBulanan();
+    }
+
+    public function exportExcel() {
+        return \Excel::download(new \App\Exports\AttendanceExport, 'absensi.xlsx');
+    }
+
+    public function exportPdf() {
+        $attendances = $this->repo->getAll();
+        $pdf = \PDF::loadView('attendance.pdf', compact('attendances'));
+        return $pdf->download('absensi.pdf');
+    }
+  public function resetClock($id)
+{
+    $attendance = $this->repo->find($id);
+    $attendance->clock_in = null;
+    $attendance->clock_out = null;
+    $attendance->save();
+    return $attendance;
 }
 
+
+
 }
+

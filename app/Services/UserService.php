@@ -13,26 +13,38 @@ class UserService {
     }
 
     public function all() {
-        return $this->repo->all();
+        return $this->repo->getByRole('karyawan');
     }
 
     public function find($id) {
-        return $this->repo->find($id);
+        return $this->repo->findByRole($id, 'karyawan');
     }
 
     public function create($data) {
         $data['password'] = Hash::make($data['password']);
+        $data['role'] = 'karyawan';
         return $this->repo->create($data);
     }
 
-    public function update($id, $data) {
-        if (isset($data['password'])) {
-            $data['password'] = Hash::make($data['password']);
-        }
-        return $this->repo->update($id, $data);
+    public function updateKaryawan($id, $data)
+{
+    if (isset($data['password']) && $data['password']) {
+        $data['password'] = \Hash::make($data['password']);
+    } else {
+        unset($data['password']); // agar tidak menimpa password lama dengan null
     }
 
-    public function delete($id) {
-        return $this->repo->delete($id);
-    }
+    return $this->repo->updateKaryawan($id, $data);
 }
+
+
+    public function delete($id) {
+        return $this->repo->deleteByRole($id, 'karyawan');
+    }
+    public function getKaryawan()
+{
+    return $this->repo->getKaryawan();
+}
+
+}
+

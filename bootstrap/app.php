@@ -90,6 +90,12 @@ $app->routeMiddleware([
     'role' => App\Http\Middleware\RoleMiddleware::class,
 ]);
 
+$app->middleware([
+    App\Http\Middleware\CorsMiddleware::class,
+]);
+
+
+
 
 
 /*
@@ -109,6 +115,9 @@ $app->routeMiddleware([
 $app->register(Illuminate\Database\DatabaseServiceProvider::class);
 $app->register(Illuminate\Hashing\HashServiceProvider::class);
 $app->register(Tymon\JWTAuth\Providers\LumenServiceProvider::class);
+$app->register(Maatwebsite\Excel\ExcelServiceProvider::class);
+$app->register(Barryvdh\DomPDF\ServiceProvider::class);
+
 
 
 /*
@@ -129,3 +138,4 @@ $app->router->group([
 });
 
 return $app;
+
