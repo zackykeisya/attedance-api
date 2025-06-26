@@ -219,14 +219,35 @@ public function today(Request $request)
         return AttendanceResource::collection($data);
     }
 
-    public function statistik()
-    {
-        try {
+public function statistik(Request $request)
+{
+    try {
+        $range = $request->query('range', 'monthly'); // default monthly
+
+        if ($range === 'daily') {
+            $data = Attendance::select(
+                DB::raw("DATE(date) as tanggal"),
+                DB::raw("COUNT(*) as total"),
+                DB::raw("SUM(CASE WHEN clock_in > '08:00:00' THEN 1 ELSE 0 END) as telat")
+            )
+            ->where('is_permission', false)
+            ->groupBy('tanggal')
+            ->orderBy('tanggal', 'asc')
+            ->get()
+            ->map(function ($item) {
+                return [
+                    'tanggal' => date('d F Y', strtotime($item->tanggal)),
+                    'total' => $item->total,
+                    'telat' => $item->telat,
+                ];
+            });
+        } else { // monthly (default)
             $data = Attendance::select(
                 DB::raw("DATE_FORMAT(date, '%Y-%m') as bulan"),
                 DB::raw("COUNT(*) as total"),
                 DB::raw("SUM(CASE WHEN clock_in > '08:00:00' THEN 1 ELSE 0 END) as telat")
             )
+            ->where('is_permission', false)
             ->groupBy('bulan')
             ->orderBy('bulan', 'asc')
             ->get()
@@ -237,15 +258,16 @@ public function today(Request $request)
                     'telat' => $item->telat,
                 ];
             });
-
-            return response()->json($data);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Terjadi kesalahan server',
-                'error' => $e->getMessage()
-            ], 500);
         }
+
+        return response()->json($data);
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Terjadi kesalahan server',
+            'error' => $e->getMessage()
+        ], 500);
     }
+}
 
     public function showHistory($id, Request $request)
     {
@@ -350,5 +372,28 @@ public function today(Request $request)
 
     return response()->json(['message' => 'Berhasil kembali ke hari yang sebenarnya. Data masa depan telah dihapus.']);
 }
+
+public function myHistory(Request $request)
+{
+    try {
+        $user = $request->user();
+        $from = $request->query('from');
+        $to = $request->query('to');
+
+        $attendances = Attendance::where('user_id', $user->id)
+            ->whereBetween('date', [$from, $to])
+            ->get();
+
+        return response()->json([
+            'data' => AttendanceResource::collection($attendances)
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Gagal mengambil riwayat',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
 
 }
