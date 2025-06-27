@@ -12,9 +12,10 @@ return new class extends Migration
    public function up()
 {
     Schema::table('attendances', function (Blueprint $table) {
-        $table->boolean('is_permission')->default(false);
-        $table->string('permission_type')->nullable(); // opsional
-    });
+    $table->boolean('is_permission')->default(false)->after('clock_out');
+    $table->string('permission_type')->nullable()->after('is_permission');
+});
+
 }
 
 public function down()

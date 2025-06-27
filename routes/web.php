@@ -49,6 +49,8 @@ $router->group(['prefix' => 'admin', 'middleware' => ['auth', 'role:admin']], fu
     $router->put('/absensi/{id}/reset', 'AttendanceController@reset');
     $router->post('/absensi/reset-day', 'AttendanceController@resetDay');
     $router->post('/absensi/skip-day', 'AttendanceController@skipDay');
+    $router->get('/absensi/terlambat-hari-ini', 'AttendanceController@terlambatHariIni');
+
 
     // Karyawan Admin
     $router->get('/karyawan', 'UserController@karyawan');

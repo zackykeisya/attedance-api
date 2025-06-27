@@ -10,7 +10,13 @@ class Attendance extends Model {
     protected $keyType = 'string';
 
     protected $fillable = [
-        'id', 'user_id', 'clock_in', 'clock_out', 'date'
+        'id',
+        'user_id',
+        'clock_in',
+        'clock_out',
+        'date',
+        'is_permission',
+        'permission_type' // 🛠️ Tambahkan field ini
     ];
 
     protected static function boot() {

@@ -76,7 +76,7 @@ public function today(Request $request)
     }
 }
 
-    public function clockIn(Request $request)
+public function clockIn(Request $request)
     {
         $user = auth()->user();
         $today = Carbon::now('Asia/Jakarta')->format('Y-m-d');
@@ -138,6 +138,8 @@ public function today(Request $request)
 
         return response()->json(['message' => 'Clock out berhasil.', 'data' => $attendance]);
     }
+
+
 
     public function history($id, Request $request)
     {
@@ -231,6 +233,8 @@ public function statistik(Request $request)
                 DB::raw("SUM(CASE WHEN clock_in > '08:00:00' THEN 1 ELSE 0 END) as telat")
             )
             ->where('is_permission', false)
+            ->whereNotNull('clock_in')
+            ->where('clock_in', '!=', '00:00:00')
             ->groupBy('tanggal')
             ->orderBy('tanggal', 'asc')
             ->get()
@@ -241,13 +245,15 @@ public function statistik(Request $request)
                     'telat' => $item->telat,
                 ];
             });
-        } else { // monthly (default)
+        } else { // monthly
             $data = Attendance::select(
                 DB::raw("DATE_FORMAT(date, '%Y-%m') as bulan"),
                 DB::raw("COUNT(*) as total"),
                 DB::raw("SUM(CASE WHEN clock_in > '08:00:00' THEN 1 ELSE 0 END) as telat")
             )
             ->where('is_permission', false)
+            ->whereNotNull('clock_in')
+            ->where('clock_in', '!=', '00:00:00')
             ->groupBy('bulan')
             ->orderBy('bulan', 'asc')
             ->get()
@@ -268,6 +274,7 @@ public function statistik(Request $request)
         ], 500);
     }
 }
+
 
     public function showHistory($id, Request $request)
     {
@@ -331,7 +338,8 @@ public function statistik(Request $request)
         return $pdf->download('absensi.pdf');
     }
 
-    public function reset($id)
+
+ public function reset($id)
     {
         $attendance = Attendance::findOrFail($id);
         $attendance->clock_in = null;
@@ -340,6 +348,8 @@ public function statistik(Request $request)
 
         return response()->json(['message' => 'Absensi berhasil di-reset.']);
     }
+
+
     public function skipDay()
 {
     $users = \App\Models\User::where('role', 'karyawan')->get();
@@ -348,7 +358,13 @@ public function statistik(Request $request)
 
     foreach ($users as $user) {
         // Hanya tambah jika belum ada data tanggal itu
-        $exists = Attendance::where('user_id', $user->id)->where('date', $date)->first();
+$exists = Attendance::where('user_id', $user->id)
+    ->where('date', $date)
+    ->where(function ($query) {
+        $query->whereNull('is_permission')
+              ->orWhere('is_permission', false);
+    })
+    ->exists();
         if (!$exists) {
             Attendance::create([
                 'user_id' => $user->id,
@@ -364,14 +380,19 @@ public function statistik(Request $request)
 
     public function resetDay()
 {
-    // Dihitung sebagai hari sebenarnya
     $now = Carbon::now('Asia/Jakarta')->format('Y-m-d');
 
-    // Hapus semua data absensi di masa depan (setelah hari ini)
-    Attendance::where('date', '>', $now)->delete();
+    // Hapus data absensi masa depan kecuali yang hasil dari izin
+    Attendance::where('date', '>', $now)
+        ->where(function ($query) {
+            $query->whereNull('is_permission')
+                  ->orWhere('is_permission', false);
+        })
+        ->delete();
 
-    return response()->json(['message' => 'Berhasil kembali ke hari yang sebenarnya. Data masa depan telah dihapus.']);
+    return response()->json(['message' => 'Berhasil kembali ke hari yang sebenarnya. Data masa depan (non-izin) telah dihapus.']);
 }
+
 
 public function myHistory(Request $request)
 {
@@ -397,3 +418,5 @@ public function myHistory(Request $request)
 
 
 }
+
+

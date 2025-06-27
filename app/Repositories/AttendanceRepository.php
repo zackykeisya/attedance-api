@@ -48,7 +48,7 @@ class AttendanceRepository {
 
     // Ambil semua data (tanpa filter, untuk export)
     public function getAll() {
-        return Attendance::with('user')->orderBy('date', 'desc')->get();
+    return Attendance::with('user')->orderBy('date', 'desc')->get(); // ✅ pastikan pakai with('user')
     }
 
     // Filter berdasarkan tanggal saja
