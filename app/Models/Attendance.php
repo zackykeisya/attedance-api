@@ -16,7 +16,7 @@ class Attendance extends Model {
         'clock_out',
         'date',
         'is_permission',
-        'permission_type' // 🛠️ Tambahkan field ini
+        'permission_type' 
     ];
 
     protected static function boot() {

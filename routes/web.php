@@ -1,4 +1,7 @@
 <?php
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Route;
 
 /** @var \Laravel\Lumen\Routing\Router $router */
 
@@ -77,3 +80,20 @@ $router->group(['middleware' => ['auth', 'role:karyawan']], function () use ($ro
     $router->get('/history/{id}', 'AttendanceController@showHistory');
     $router->get('/history', 'AttendanceController@myHistory');
 });
+
+
+// ======================
+// TANGGAL SERVER (GLOBAL)
+// ======================
+$router->get('/server-date', function () {
+    try {
+        $date = Cache::get('current_date', Carbon::now('Asia/Jakarta')->format('Y-m-d'));
+        return response()->json(['date' => $date]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'message' => 'Gagal mengambil tanggal server',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+

@@ -3,144 +3,139 @@
 namespace App\Http\Controllers;
 
 use App\Models\Attendance;
-use App\Models\User;
 use App\Models\Permission;
+use App\Models\User;
 use App\Services\AttendanceService;
 use App\Http\Resources\AttendanceResource;
 use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
-use Maatwebsite\Excel\Facades\Excel;
-use App\Exports\AttendanceExport;
-use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
-class AttendanceController extends Controller 
+class AttendanceController extends Controller
 {
     protected $service;
 
-    public function __construct(AttendanceService $service) {
+    public function __construct(AttendanceService $service)
+    {
         $this->service = $service;
     }
 
-    // app/Http/Controllers/AttendanceController.php
+    // Mengambil data absensi hari ini untuk user yang sedang login.
+    // Jika ada izin yang disetujui, akan mengembalikan info izin.
+    // Jika tidak, mengembalikan data clock_in, clock_out, dan status absensi hari ini.
+    public function today(Request $request)
+    {
+        try {
+            $user = $request->user();
+            if (!$user) return response()->json(['message' => 'Unauthorized'], 401);
 
-public function today(Request $request)
-{
-    try {
-        $date = $request->query('date', Carbon::today()->toDateString());
-        $user = $request->user();
-        if (!$user) {
-            return response()->json(['message' => 'Unauthorized'], 401);
-        }
+            $date = $request->query('date', Cache::get('current_date', Carbon::now('Asia/Jakarta')->toDateString()));
 
-        $permission = Permission::where('user_id', $user->id)
-            ->whereDate('date', $date)
-            ->where('status', 'approved')
-            ->first();
+            $permission = Permission::where('user_id', $user->id)
+                ->whereDate('date', $date)
+                ->where('status', 'approved')
+                ->first();
 
-        if ($permission) {
+            if ($permission) {
+                return response()->json([
+                    'is_permission' => true,
+                    'permission_type' => $permission->type,
+                    'description' => $permission->description,
+                    'date' => $date
+                ]);
+            }
+
+            $attendance = Attendance::where('user_id', $user->id)
+                ->whereDate('date', $date)
+                ->first();
+
             return response()->json([
-                'is_permission' => true,
-                'permission_type' => $permission->type,
-                'description' => $permission->description,
+                'clock_in' => $attendance->clock_in ?? null,
+                'clock_out' => $attendance->clock_out ?? null,
+                'is_permission' => $attendance->is_permission ?? false,
+                'permission_type' => $attendance->permission_type ?? null,
                 'date' => $date
             ]);
-        }
-
-        $attendance = Attendance::where('user_id', $user->id)
-            ->whereDate('date', $date)
-            ->first();
-
-        if (!$attendance) {
+        } catch (\Exception $e) {
             return response()->json([
-                'clock_in' => null,
+                'message' => 'Gagal memuat absensi',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Melakukan clock in untuk user yang sedang login.
+    // Jika sudah clock in dan belum clock out, akan menolak request.
+    // Jika sudah di-reset (clock_in null), bisa clock in ulang.
+    public function clockIn(Request $request)
+    {
+        try {
+            $user = auth()->user();
+            $today = Cache::get('current_date', Carbon::now('Asia/Jakarta')->toDateString());
+            $now = Carbon::now('Asia/Jakarta')->toTimeString();
+
+            $existing = Attendance::where('user_id', $user->id)
+                ->where('date', $today)
+                ->first();
+
+            if ($existing) {
+                if ($existing->clock_in && !$existing->clock_out) {
+                    return response()->json(['message' => 'Sudah clock in, belum clock out.'], 400);
+                }
+
+                if (!$existing->clock_in && !$existing->clock_out) {
+                    $existing->clock_in = $now;
+                    $existing->save();
+                    return response()->json(['message' => 'Clock in ulang berhasil setelah reset.', 'data' => $existing]);
+                }
+
+                return response()->json(['message' => 'Sudah clock in dan clock out hari ini.'], 400);
+            }
+
+            $attendance = Attendance::create([
+                'user_id' => $user->id,
+                'date' => $today,
+                'clock_in' => $now,
                 'clock_out' => null,
                 'is_permission' => false,
                 'permission_type' => null,
-                'date' => $date
             ]);
+
+            return response()->json(['message' => 'Clock in berhasil.', 'data' => $attendance]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Gagal clock in', 'error' => $e->getMessage()], 500);
         }
-
-        return response()->json([
-            'clock_in' => $attendance->clock_in,
-            'clock_out' => $attendance->clock_out,
-            'is_permission' => isset($attendance->is_permission) ? $attendance->is_permission : false,
-            'permission_type' => isset($attendance->permission_type) ? $attendance->permission_type : null,
-            'date' => $date
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Internal Server Error',
-            'error' => $e->getMessage()
-        ], 500);
-    }
-}
-
-public function clockIn(Request $request)
-    {
-        $user = auth()->user();
-        $today = Carbon::now('Asia/Jakarta')->format('Y-m-d');
-        $now = Carbon::now('Asia/Jakarta')->toTimeString();
-
-        $existing = Attendance::where('user_id', $user->id)
-            ->where('date', $today)
-            ->first();
-
-        if ($existing) {
-            if ($existing->clock_in && !$existing->clock_out) {
-                return response()->json(['message' => 'Sudah clock in, belum clock out.'], 400);
-            }
-
-            if (!$existing->clock_in && !$existing->clock_out) {
-                $existing->clock_in = $now;
-                $existing->save();
-                return response()->json(['message' => 'Clock in ulang berhasil setelah reset.', 'data' => $existing]);
-            }
-
-            if ($existing->clock_in && $existing->clock_out) {
-                return response()->json(['message' => 'Sudah clock in dan clock out hari ini.'], 400);
-            }
-        }
-
-        $attendance = new Attendance();
-        $attendance->user_id = $user->id;
-        $attendance->date = $today;
-        $attendance->clock_in = $now;
-        $attendance->save();
-
-        return response()->json(['message' => 'Clock in berhasil.', 'data' => $attendance]);
     }
 
+    // Melakukan clock out untuk user yang sedang login.
+    // Hanya bisa dilakukan jika sudah clock in dan belum clock out.
     public function clockOut(Request $request)
     {
-        $user = auth()->user();
-        $today = Carbon::now('Asia/Jakarta')->format('Y-m-d');
-        $now = Carbon::now('Asia/Jakarta')->toTimeString();
+        try {
+            $user = auth()->user();
+            $today = Cache::get('current_date', Carbon::now('Asia/Jakarta')->toDateString());
+            $now = Carbon::now('Asia/Jakarta')->toTimeString();
 
-        $attendance = Attendance::where('user_id', $user->id)
-            ->where('date', $today)
-            ->first();
+            $attendance = Attendance::where('user_id', $user->id)
+                ->where('date', $today)
+                ->first();
 
-        if (!$attendance) {
-            return response()->json(['message' => 'Belum melakukan clock in.'], 400);
+            if (!$attendance) return response()->json(['message' => 'Belum clock in.'], 400);
+            if ($attendance->clock_out) return response()->json(['message' => 'Sudah clock out.'], 400);
+
+            $attendance->clock_out = $now;
+            $attendance->save();
+
+            return response()->json(['message' => 'Clock out berhasil.', 'data' => $attendance]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => 'Gagal clock out', 'error' => $e->getMessage()], 500);
         }
-
-        if ($attendance->clock_out) {
-            return response()->json(['message' => 'Sudah melakukan clock out hari ini.'], 400);
-        }
-
-        if (!$attendance->clock_in) {
-            return response()->json(['message' => 'Data absensi tidak valid.'], 400);
-        }
-
-        $attendance->clock_out = $now;
-        $attendance->save();
-
-        return response()->json(['message' => 'Clock out berhasil.', 'data' => $attendance]);
     }
 
-
-
+    // Mengambil riwayat absensi dan izin untuk user tertentu (by id) dalam bulan dan tahun tertentu.
+    // Juga menghitung statistik kehadiran (tepat waktu, terlambat, izin).
     public function history($id, Request $request)
     {
         $user = auth()->user();
@@ -196,23 +191,27 @@ public function clockIn(Request $request)
         ]);
     }
 
+    // Mengambil seluruh riwayat absensi (biasanya untuk admin).
     public function allHistory() {
         $data = $this->service->getAllHistory();
         return AttendanceResource::collection($data);
     }
 
+    // Filter absensi berdasarkan user id.
     public function filterByUser(Request $request) {
         $userId = $request->query('user_id');
         $data = $this->service->filterByUser($userId);
         return AttendanceResource::collection($data);
     }
 
+    // Filter absensi berdasarkan tanggal.
     public function filterByDate(Request $request) {
         $date = $request->query('date');
         $data = $this->service->filterByDate($date);
         return AttendanceResource::collection($data);
     }
 
+    // Filter absensi berdasarkan kombinasi user id dan rentang tanggal.
     public function filterCombined(Request $request) {
         $userId = $request->query('user_id');
         $from = $request->query('from');
@@ -221,61 +220,63 @@ public function clockIn(Request $request)
         return AttendanceResource::collection($data);
     }
 
-public function statistik(Request $request)
-{
-    try {
-        $range = $request->query('range', 'monthly'); // default monthly
+    // Statistik absensi (harian/bulanan): total kehadiran dan jumlah keterlambatan.
+    public function statistik(Request $request)
+    {
+        try {
+            $range = $request->query('range', 'monthly'); // default monthly
 
-        if ($range === 'daily') {
-            $data = Attendance::select(
-                DB::raw("DATE(date) as tanggal"),
-                DB::raw("COUNT(*) as total"),
-                DB::raw("SUM(CASE WHEN clock_in > '08:00:00' THEN 1 ELSE 0 END) as telat")
-            )
-            ->where('is_permission', false)
-            ->whereNotNull('clock_in')
-            ->where('clock_in', '!=', '00:00:00')
-            ->groupBy('tanggal')
-            ->orderBy('tanggal', 'asc')
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'tanggal' => date('d F Y', strtotime($item->tanggal)),
-                    'total' => $item->total,
-                    'telat' => $item->telat,
-                ];
-            });
-        } else { // monthly
-            $data = Attendance::select(
-                DB::raw("DATE_FORMAT(date, '%Y-%m') as bulan"),
-                DB::raw("COUNT(*) as total"),
-                DB::raw("SUM(CASE WHEN clock_in > '08:00:00' THEN 1 ELSE 0 END) as telat")
-            )
-            ->where('is_permission', false)
-            ->whereNotNull('clock_in')
-            ->where('clock_in', '!=', '00:00:00')
-            ->groupBy('bulan')
-            ->orderBy('bulan', 'asc')
-            ->get()
-            ->map(function ($item) {
-                return [
-                    'bulan' => date('F Y', strtotime($item->bulan . '-01')),
-                    'total' => $item->total,
-                    'telat' => $item->telat,
-                ];
-            });
+            if ($range === 'daily') {
+                $data = Attendance::select(
+                    DB::raw("DATE(date) as tanggal"),
+                    DB::raw("COUNT(*) as total"),
+                    DB::raw("SUM(CASE WHEN clock_in > '08:00:00' THEN 1 ELSE 0 END) as telat")
+                )
+                ->where('is_permission', false)
+                ->whereNotNull('clock_in')
+                ->where('clock_in', '!=', '00:00:00')
+                ->groupBy('tanggal')
+                ->orderBy('tanggal', 'asc')
+                ->get()
+                ->map(function ($item) {
+                    return [
+                        'tanggal' => date('d F Y', strtotime($item->tanggal)),
+                        'total' => $item->total,
+                        'telat' => $item->telat,
+                    ];
+                });
+            } else { // monthly
+                $data = Attendance::select(
+                    DB::raw("DATE_FORMAT(date, '%Y-%m') as bulan"),
+                    DB::raw("COUNT(*) as total"),
+                    DB::raw("SUM(CASE WHEN clock_in > '08:00:00' THEN 1 ELSE 0 END) as telat")
+                )
+                ->where('is_permission', false)
+                ->whereNotNull('clock_in')
+                ->where('clock_in', '!=', '00:00:00')
+                ->groupBy('bulan')
+                ->orderBy('bulan', 'asc')
+                ->get()
+                ->map(function ($item) {
+                    return [
+                        'bulan' => date('F Y', strtotime($item->bulan . '-01')),
+                        'total' => $item->total,
+                        'telat' => $item->telat,
+                    ];
+                });
+            }
+
+            return response()->json($data);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Terjadi kesalahan server',
+                'error' => $e->getMessage()
+            ], 500);
         }
-
-        return response()->json($data);
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Terjadi kesalahan server',
-            'error' => $e->getMessage()
-        ], 500);
     }
-}
 
 
+    // Menampilkan detail riwayat absensi dan statistik untuk user tertentu.
     public function showHistory($id, Request $request)
     {
         $auth = auth()->user();
@@ -318,6 +319,7 @@ public function statistik(Request $request)
         ]);
     }
 
+    // Export data absensi ke file Excel.
     public function exportExcel(Request $request) {
         $from = $request->query('from');
         $to = $request->query('to');
@@ -328,6 +330,7 @@ public function statistik(Request $request)
         return Excel::download(new AttendanceExport($attendances), 'absensi.xlsx');
     }
 
+    // Export data absensi ke file PDF.
     public function exportPdf(Request $request) {
         $from = $request->query('from');
         $to = $request->query('to');
@@ -339,7 +342,8 @@ public function statistik(Request $request)
     }
 
 
- public function reset($id)
+    // Reset clock_in dan clock_out absensi tertentu (by id).
+    public function reset($id)
     {
         $attendance = Attendance::findOrFail($id);
         $attendance->clock_in = null;
@@ -350,73 +354,88 @@ public function statistik(Request $request)
     }
 
 
+    // Simulasi hari berikutnya: menambah data absensi kosong untuk semua karyawan dan update tanggal aktif.
     public function skipDay()
-{
-    $users = \App\Models\User::where('role', 'karyawan')->get();
-    $date = Carbon::now('Asia/Jakarta')->addDay()->format('Y-m-d');
-    $waktu = Carbon::createFromTime(8, 0, 0); // jam masuk tepat waktu
+    {
+        try {
+            $nextDate = Carbon::now('Asia/Jakarta')->addDay()->format('Y-m-d');
 
-    foreach ($users as $user) {
-        // Hanya tambah jika belum ada data tanggal itu
-$exists = Attendance::where('user_id', $user->id)
-    ->where('date', $date)
-    ->where(function ($query) {
-        $query->whereNull('is_permission')
-              ->orWhere('is_permission', false);
-    })
-    ->exists();
-        if (!$exists) {
-            Attendance::create([
-                'user_id' => $user->id,
-                'date' => $date,
-                'clock_in' => $waktu->toTimeString(),
-                'clock_out' => $waktu->copy()->addHours(8)->toTimeString(),
-            ]);
+            // Simpan tanggal ke cache
+            Cache::put('current_date', $nextDate);
+
+            // Buat data absensi kosong untuk semua karyawan
+            $users = User::where('role', 'karyawan')->get();
+            foreach ($users as $user) {
+                Attendance::create([
+                    'user_id' => $user->id,
+                    'date' => $nextDate,
+                    'clock_in' => null,
+                    'clock_out' => null,
+                    'is_permission' => false,
+                    'permission_type' => null,
+                ]);
+            }
+
+            return response()->json(['message' => 'Hari berhasil disimulasikan', 'date' => $nextDate]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Gagal skip hari',
+                'error' => $e->getMessage(),
+            ], 500);
         }
     }
 
-    return response()->json(['message' => 'Berhasil skip ke hari berikutnya dengan absensi otomatis.']);
-}
 
+    // Reset hari ke tanggal hari ini dan hapus data absensi di masa depan.
     public function resetDay()
-{
-    $now = Carbon::now('Asia/Jakarta')->format('Y-m-d');
+    {
+        try {
+            $now = Carbon::now('Asia/Jakarta')->format('Y-m-d');
 
-    // Hapus data absensi masa depan kecuali yang hasil dari izin
-    Attendance::where('date', '>', $now)
-        ->where(function ($query) {
-            $query->whereNull('is_permission')
-                  ->orWhere('is_permission', false);
-        })
-        ->delete();
+            // Reset current_date ke hari ini
+            Cache::put('current_date', $now);
 
-    return response()->json(['message' => 'Berhasil kembali ke hari yang sebenarnya. Data masa depan (non-izin) telah dihapus.']);
-}
+            Attendance::where('date', '>', $now)
+                ->where(function ($q) {
+                    $q->whereNull('is_permission')
+                      ->orWhere('is_permission', false);
+                })
+                ->delete();
 
+            return response()->json(['message' => 'Berhasil kembali ke hari yang sebenarnya.']);
 
-public function myHistory(Request $request)
-{
-    try {
-        $user = $request->user();
-        $from = $request->query('from');
-        $to = $request->query('to');
-
-        $attendances = Attendance::where('user_id', $user->id)
-            ->whereBetween('date', [$from, $to])
-            ->get();
-
-        return response()->json([
-            'data' => AttendanceResource::collection($attendances)
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Gagal mengambil riwayat',
-            'error' => $e->getMessage()
-        ], 500);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Gagal reset hari',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
     }
-}
 
 
+    // Mengambil riwayat absensi user yang sedang login dalam rentang tanggal tertentu.
+    public function myHistory(Request $request)
+    {
+        try {
+            $user = $request->user();
+            $from = $request->query('from');
+            $to = $request->query('to');
+
+            $attendances = Attendance::where('user_id', $user->id)
+                ->whereBetween('date', [$from, $to])
+                ->get();
+
+            return response()->json([
+                'data' => AttendanceResource::collection($attendances)
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Gagal mengambil riwayat',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }
 
 

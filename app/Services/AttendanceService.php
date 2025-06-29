@@ -77,16 +77,6 @@ class AttendanceService {
     public function getStatistik() {
         return $this->repo->statistikBulanan();
     }
-
-    public function exportExcel() {
-        return \Excel::download(new \App\Exports\AttendanceExport, 'absensi.xlsx');
-    }
-
-    public function exportPdf() {
-        $attendances = $this->repo->getAll();
-        $pdf = \PDF::loadView('attendance.pdf', compact('attendances'));
-        return $pdf->download('absensi.pdf');
-    }
   public function resetClock($id)
 {
     $attendance = $this->repo->find($id);

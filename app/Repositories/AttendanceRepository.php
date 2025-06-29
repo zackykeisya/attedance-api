@@ -5,23 +5,26 @@ namespace App\Repositories;
 use App\Models\Attendance;
 
 class AttendanceRepository {
-    //today 
+    // Mengambil record absensi hari ini untuk user tertentu
     public function todayRecord($userId, $date) {
         return Attendance::where('user_id', $userId)
             ->where('date', $date)
             ->first();
     }
 
+    // Membuat data absensi baru
     public function create($data) {
         return Attendance::create($data);
     }
 
+    // Mengupdate data absensi berdasarkan id
     public function update($id, $data) {
         $attendance = Attendance::findOrFail($id);
         $attendance->update($data);
         return $attendance;
     }
 
+    // Mengambil riwayat absensi user tertentu, bisa filter rentang tanggal
     public function historyByUser($userId, $from = null, $to = null) {
         $query = Attendance::where('user_id', $userId);
 
@@ -32,6 +35,7 @@ class AttendanceRepository {
         return $query->orderBy('date', 'desc')->get();
     }
 
+    // Mengambil seluruh riwayat absensi (bisa filter user dan tanggal), untuk admin
     public function getAllHistory($userId = null, $from = null, $to = null) {
         $query = Attendance::with('user');
 
@@ -46,12 +50,12 @@ class AttendanceRepository {
         return $query->orderBy('date', 'desc')->get();
     }
 
-    // Ambil semua data (tanpa filter, untuk export)
+    // Mengambil semua data absensi (untuk export, tanpa filter)
     public function getAll() {
-    return Attendance::with('user')->orderBy('date', 'desc')->get(); // ✅ pastikan pakai with('user')
+        return Attendance::with('user')->orderBy('date', 'desc')->get();
     }
 
-    // Filter berdasarkan tanggal saja
+    // Mengambil absensi berdasarkan tanggal tertentu
     public function getByDate($date) {
         return Attendance::with('user')
             ->where('date', $date)
@@ -59,7 +63,7 @@ class AttendanceRepository {
             ->get();
     }
 
-    // Filter berdasarkan user_id dan tanggal
+    // Mengambil absensi berdasarkan user dan tanggal tertentu
     public function getByUserAndDate($userId, $date) {
         return Attendance::with('user')
             ->where('user_id', $userId)
@@ -67,19 +71,18 @@ class AttendanceRepository {
             ->get();
     }
 
-    // Statistik absensi per bulan
+    // Statistik absensi per bulan (jumlah absensi tiap bulan)
     public function statistikBulanan() {
         return Attendance::selectRaw('DATE_FORMAT(date, "%Y-%m") as bulan, COUNT(*) as total')
             ->groupBy('bulan')
             ->orderBy('bulan', 'desc')
             ->get();
     }
-    public function find($id)
-{
-    return Attendance::findOrFail($id);
-}
 
-
+    // Mengambil data absensi berdasarkan id (find by id)
+    public function find($id) {
+        return Attendance::findOrFail($id);
+    }
 }
 
 
